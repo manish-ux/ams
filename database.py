@@ -3,7 +3,7 @@ import sqlite3
 
 connection_obj = sqlite3.connect("ams.db")
 
-def create_table():
+def create_tables():
 
     cursor_obj = connection_obj.cursor()
 
@@ -53,6 +53,4 @@ def create_table():
 
     connection_obj.commit()
     connection_obj.close()
-
-if __name__ == "__main__":
-    create_table()
+    
