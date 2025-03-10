@@ -27,6 +27,7 @@ def create_tables():
     cursor_obj.execute("""
     CREATE TABLE IF NOT EXISTS artist (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         dob TEXT,
         gender TEXT NOT NULL,
@@ -34,13 +35,15 @@ def create_tables():
         first_release_year INTEGER NOT NULL,
         no_of_albums_released INTEGER,
         created_at TEXT,
-        updated_at TEXT                 
+        updated_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES user(id)            
     );
     """)
 
     # create Song table
     cursor_obj.execute("""
     CREATE TABLE IF NOT EXISTS song (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         artist_id INTEGER NOT NULL,
         title TEXT NOT NULL,
         album_name TEXT,

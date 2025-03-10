@@ -1,11 +1,18 @@
 import http.server
 import socketserver
 import urllib.parse
-import random
+import random, sqlite3
 import string
+from security import hash_password
 from database import create_tables      
-from user_crud import create_user, login, get_user_by_id
-from music_crud import list_songs_for_user
+from user_crud import create_user, login, get_user_by_id, list_users_paginated,update_user, delete_user
+from music_crud import list_songs_for_user,list_songs_paginated,create_music
+from artist_crud import (
+    create_artist, update_artist, delete_artist,
+    get_artist_by_id,list_artists_paginated,
+    list_songs_for_artist,export_artists_csv,
+    import_artists_csv
+    )
 
 # In-memory session store: { session_id: user_id }
 SESSIONS = {}
@@ -17,31 +24,88 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         # Parse the path
-        path = self.path
+        parsed_path = urllib.parse.urlparse(self.path)
+        path = parsed_path.path
+        query = urllib.parse.parse_qs(parsed_path.query)
+
         if path == '/':
             self.handle_home_page()
-        elif path == '/register':
-            self.handle_register_form()
+        elif path == '/register_user':
+            self.handle_user_register_form()
         elif path == '/login':
             self.handle_login_form()
         elif path == '/dashboard':
             self.handle_dashboard()
         elif path == '/logout':
             self.handle_logout()
+        elif path == '/songs':
+            self.handle_list_songs(query)
+        elif path == '/users':
+            self.handle_list_users(query)
+        elif path == '/artists':
+            self.handle_list_artists(query)
+        elif path == '/artist_songs':
+            self.handle_artist_songs(query)
+        elif path == '/artist_export':
+            self.handle_artist_export()
+        elif path == '/artist_import_form':
+            self.handle_artist_import_form()
+        elif path == '/update_user':
+            self.handle_user_update_form()
+        elif path == '/delete_user':
+            self.handle_user_delete_form()
+        elif path == '/list_artist':
+            self.handle_artist_list_form()
+        elif path == '/register_artist':
+            self.handle_artist_register_form()
+        elif path == '/update_artist':
+            self.handle_artist_update_form()
+        elif path == '/delete_artist':
+            self.handle_artist_delete_form()
         else:
             self.send_error(404, "Not Found")
+        
+        # elif path == '/list_user':
+        #     self.handle_user_list_form()
+        # elif path == '/list_song':
+        #     self.handle_song_list_form()
+        # elif path == '/register_song':
+        #     self.handle_song_register_form()
+        # elif path == '/update_song':
+        #     self.handle_song_update_form()
+        # elif path == '/delete_song':
+        #     self.handle_song_delete_form()
+        
 
     def do_POST(self):
         # We'll parse form data from the body
-        path = self.path
+        parsed_path = urllib.parse.urlparse(self.path)
+        path = parsed_path.path
+        # path = self.path
+        print("path",path)
         content_length = int(self.headers.get('Content-Length', 0))
+        print("content_length",content_length)
         body = self.rfile.read(content_length)
+        print("body",body)
         form_data = urllib.parse.parse_qs(body.decode())
-
-        if path == '/register':
+        print("form_data",form_data)
+        if path == '/register_user':
             self.handle_register_submit(form_data)
         elif path == '/login':
             self.handle_login_submit(form_data)
+        elif path == '/artist_import':
+            self.handle_artist_import(form_data)
+        elif path == '/update_user':
+            self.handle_update_user_submit(form_data)
+        elif path == '/delete_user':
+            print("inside delete user")
+            self.handle_delete_user_submit(form_data)
+        elif path == '/register_artist':
+            self.handle_artist_register_form(form_data)
+        elif path == '/update_artist':
+            self.handle_artist_update_submit(form_data)
+        elif path == '/delete_artist':
+            self.handle_delete_artist_submit(form_data)
         else:
             self.send_error(404, "Not Found")
 
@@ -55,70 +119,116 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
         Return the user_id if logged in, otherwise None.
         """
         cookie_header = self.headers.get('Cookie')
+        print(cookie_header)
         if not cookie_header:
             return None
 
         # Cookie might look like: session_id=ABC123
         cookies = {}
         for kv in cookie_header.split(';'):
+            print("kv",kv)
             kv = kv.strip()
             if '=' in kv:
                 key, value = kv.split('=', 1)
+                print(key,value)
                 cookies[key] = value
 
         session_id = cookies.get('session_id')
+        print("session_id",session_id)
         if session_id and session_id in SESSIONS:
             return SESSIONS[session_id]
         return None
+    
+    
 
+    def get_current_user_role(self):
+        user_id = self.get_current_user_id()
+        if not user_id:
+            return None
+        row = get_user_by_id(user_id)
+        if row:
+            # row = (id, first_name, last_name, email, role)
+            return row[4]
+        return None
+    
     def send_html_response(self, html, status=200):
         """Utility to send HTML with UTF-8 encoding."""
+        print("Inside send html response form")
         self.send_response(status)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.end_headers()
+        print("before last line of send html response")
         self.wfile.write(html.encode('utf-8'))
 
+    def redirect(self, location):
+        print("inside redirect")
+        self.send_response(302)
+        self.send_header('Location', location)
+        self.end_headers()
+
+    def check_role(self, allowed_roles):
+        """Return True if current user role is in allowed_roles, else False."""
+        role = self.get_current_user_role()
+        return role in allowed_roles
     # ------------------------
     # Route Handlers (GET)
     # ------------------------
 
     def handle_home_page(self):
         user_id = self.get_current_user_id()
-        if user_id:
-            # If user is logged in, show a link to Dashboard, plus Logout
-            html = f"""
-            <html>
-            <head><title>Home</title></head>
-            <body>
-                <h1>Welcome!</h1>
-                <p>You are logged in as user_id = {user_id}</p>
-                <p><a href="/dashboard">Go to Dashboard</a></p>
-                <p><a href="/logout">Logout</a></p>
-            </body>
-            </html>
-            """
-        else:
-            # If not logged in, show links to Login or Register
-            html = """
-            <html>
-            <head><title>Home</title></head>
-            <body>
-                <h1>Welcome!</h1>
-                <p><a href="/login">Login</a></p>
-                <p><a href="/register">Register</a></p>
-            </body>
-            </html>
-            """
-        self.send_html_response(html)
-
-    def handle_register_form(self):
-        """Show a simple HTML form for registration."""
+        role = self.get_current_user_role()
+        # If admin user is already logged in, redirect to dashboard immediately
+        if user_id and role in ('super_admin', 'artist_manager', 'artist'):
+            self.redirect('/dashboard')
+            return
+        
+        # Otherwise show login link
         html = """
         <html>
-        <head><title>Register</title></head>
+        <head><title>Home</title></head>
+        <body>
+            <h1>Welcome! Please <a href="/login">Login</a></h1>
+        </body>
+        </html>
+        """
+        # if user_id:
+        #     # If user is logged in, show a link to Dashboard, plus Logout
+        #     html = f"""
+        #     <html>
+        #     <head><title>Home</title></head>
+        #     <body>
+        #         <h1>Welcome!</h1>
+        #         <p>You are logged in as user_id = {user_id}</p>
+        #         <p><a href="/dashboard">Go to Dashboard</a></p>
+        #         <p><a href="/logout">Logout</a></p>
+        #     </body>
+        #     </html>
+        #     """
+        # else:
+        #     # If not logged in, show links to Login or Register
+        #     html = """
+        #     <html>
+        #     <head><title>Home</title></head>
+        #     <body>
+        #         <h1>Welcome!</h1>
+        #         <p><a href="/login">Login</a></p>
+        #         <p><a href="/register_user">Register</a></p>
+        #     </body>
+        #     </html>
+        #     """
+        self.send_html_response(html)
+
+    def handle_user_register_form(self):
+        """Show a simple HTML form for registration."""
+        if self.get_current_user_id():
+            self.redirect('/dashboard')
+        print("Inside register form")
+        html = """
+        <html>
+        <head><title>Register User</title></head>
         <body>
             <h1>Register</h1>
-            <form method="POST" action="/register">
+            <form method="POST" action="/register_user">
                 <p>First Name: <input type="text" name="first_name"></p>
                 <p>Last Name: <input type="text" name="last_name"></p>
                 <p>Email: <input type="email" name="email"></p>
@@ -126,9 +236,89 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
                 <p>Gender: <input type="text" name="gender"></p>
                 <p>Role: 
                     <select name="role">
+                        <option value="" disabled selected>Select a role</option> 
                         <option value="artist">artist</option>
                         <option value="artist_manager">artist_manager</option>
                         <option value="super_admin">super_admin</option>
+                    </select>
+                </p>
+                <input type="submit" value="Register">
+            </form>
+            <p><a href="/login">Back to Login</a></p>
+            <p><a href="/">Back to Home</a></p>
+        </body>
+        </html>
+        """
+        self.send_html_response(html)
+
+    def handle_user_update_form(self):
+            """Show a simple HTML form for user update."""
+            html = """
+            <html>
+            <head><title>Update User</title></head>
+            <body>
+                <h1>Update User</h1>
+                <form method="POST" action="/update_user">
+                    <p>User ID: <input type="number" name="id"></p>
+                    <p>First Name: <input type="text" name="first_name"></p>
+                    <p>Last Name: <input type="text" name="last_name"></p>
+                    <p>Email: <input type="email" name="email"></p>
+                    <p>Password: <input type="password" name="password"></p>
+                    <p>Gender: <input type="text" name="gender"></p>
+                    <p>Role: 
+                        <select name="role">
+                            <option value="" disabled selected>Select a role</option> 
+                            <option value="artist">artist</option>
+                            <option value="artist_manager">artist_manager</option>
+                            <option value="super_admin">super_admin</option>
+                        </select>
+                    </p>
+                    <input type="submit" value="Update">
+                </form>
+                <p><a href="/">Back to Home</a></p>
+            </body>
+            </html>
+            """
+            self.send_html_response(html)
+
+    def handle_user_delete_form(self):
+            """Show a simple HTML form for deleting user."""
+            html = """
+            <html>
+            <head><title>Delete User</title></head>
+            <body>
+                <h1>Delete</h1>
+                <form method="POST" action="/delete_user">
+                    <p>User ID: <input type="number" name="user_id"></p>
+                    <input type="submit" value="Delete">
+                </form>
+                <p><a href="/">Back to Home</a></p>
+            </body>
+            </html>
+            """
+            self.send_html_response(html)
+
+    def handle_artist_register_form(self):
+        """Show a simple HTML form for artist registration."""
+
+        html = """
+        <html>
+        <head><title>Register Artist</title></head>
+        <body>
+            <h1>Register</h1>
+            <form method="POST" action="/register_artist">
+                <p>Name: <input type="text" name="name"></p>
+                <p>DOB: <input type="text" name="dob"></p>
+                <p>Address: <input type="text" name="address"></p>
+                <p>First_release_year: <input type="text" name="first_release_year"></p>
+                <p>No_of_albums_released: <input type="text" name="first_release_year"></p>
+
+                <p>Gender: 
+                    <select name="gender">
+                        <option value="" disabled selected>select a gender</option>
+                        <option value="m">m</option>
+                        <option value="f">f</option>
+                        <option value="o">o</option>
                     </select>
                 </p>
                 <input type="submit" value="Register">
@@ -139,8 +329,49 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
         """
         self.send_html_response(html)
 
+    def handle_artist_update_form(self):
+            """Show a simple HTML form for artist update."""
+            html = """
+            <html>
+            <head><title>Update Artist</title></head>
+            <body>
+                <h1>Update Artist</h1>
+                <form method="POST" action="/update_artist">
+                    <p>Name: <input type="text" name="name"></p>
+                    <p>DOB: <input type="text" name="dob"></p>
+                    <p>Gender: <input type="text" name="gender"></p>
+                    <p>Address: <input type="text" name="address"></p>
+                    <p>First_release_year: <input type="text" name="first_release_year"></p>
+                    <p>No_of_albums_released: <input type="number" name="no_of_albums_released"></p>
+                    <input type="submit" value="Update">
+                </form>
+                <p><a href="/">Back to Home</a></p>
+            </body>
+            </html>
+            """
+            self.send_html_response(html)
+
+    def handle_artist_delete_form(self):
+            """Show a simple HTML form for deleting artist."""
+            html = """
+            <html>
+            <head><title>Delete Artist</title></head>
+            <body>
+                <h1>Delete</h1>
+                <form method="POST" action="/delete_artist">
+                    <p>Artist ID: <input type="number" name="artist_id"></p>
+                    <input type="submit" value="Delete">
+                </form>
+                <p><a href="/">Back to Home</a></p>
+            </body>
+            </html>
+            """
+            self.send_html_response(html)
+            
     def handle_login_form(self):
-        """Show a simple HTML form for login."""
+        # If already logged in, go to dashboard
+        if self.get_current_user_id():
+            self.redirect('/dashboard')
         html = """
         <html>
         <head><title>Login</title></head>
@@ -149,8 +380,10 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
             <form method="POST" action="/login">
                 <p>Email: <input type="email" name="email"></p>
                 <p>Password: <input type="password" name="password"></p>
-                <input type="submit" value="Login">
-            </form>
+                <input type="submit" value="Login" style="margin-bottom: 10px; display: block;">
+            </form> 
+            
+            <p>New user? <a href="/register_user">Register here</a></p>
             <p><a href="/">Back to Home</a></p>
         </body>
         </html>
@@ -160,39 +393,193 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
     def handle_dashboard(self):
         """Show user info and list of songs for that user."""
         user_id = self.get_current_user_id()
+        print("user_id",user_id)
         if not user_id:
-            # Not logged in, redirect to home
-            self.send_response(302)
-            self.send_header('Location', '/')
-            self.end_headers()
-            return self.handle_home_page()
+            self.redirect('/')
+             
 
-        # Get user info
         user_row = get_user_by_id(user_id)
         if not user_row:
-            # Something’s wrong: user not found
             self.send_html_response("<h1>User not found</h1>", 404)
+
+        # Show a simple "Admin panel" if super_admin or artist_manager
+        # If user is an artist, maybe show a simpler view
+        role = user_row[4]  # role
+        print("role",role)
+        if role == 'super_admin':
+            print("inside super admin")
+            html = f"""
+            <html>
+            <head><title>Dashboard</title></head>
+            <body>
+                <h1>Dashboard (Super Admin)</h1>
+                <p><a href="/users">Manage Users</a></p>
+                <p><a href="/artists">Manage Artists</a></p>
+                <p><a href="/songs">Manage Songs</a></p>
+                <p><a href="/artist_import_form">Import Artists (CSV)</a></p>
+                <p><a href="/artist_export">Export Artists (CSV)</a></p>
+                <p><a href="/logout">Logout</a></p>
+            </body>
+            </html>
+            """
+        elif role == 'artist_manager':
+            print("inside artist_manager")
+
+            html = f"""
+            <html>
+            <head><title>Dashboard</title></head>
+            <body>
+                <h1>Dashboard (Artist Manager)</h1>
+                <p><a href="/artists">Manage Artists</a></p>
+                <p><a href="/songs">Manage Songs</a></p>
+                <p><a href="/artist_import_form">Import Artists (CSV)</a></p>
+                <p><a href="/artist_export">Export Artists (CSV)</a></p>
+                <p><a href="/logout">Logout</a></p>
+            </body>
+            </html>
+            """
+        else:
+            # role == 'artist'
+            # Just show songs for this user
+            print("inside artist")
+
+            songs = list_songs_for_user(user_id)
+            list_html = "<ul>"
+            if songs:
+                for sid, album, stype, stagename in songs:
+                    list_html += f"<li>{album} ({stype})</li>"
+                list_html += "</ul>"
+            else:
+                list_html = "<p>No songs found.</p>"
+            html = f"""
+            <html>
+            <head><title>Dashboard</title></head>
+            <body>
+                <h1>Dashboard (Artist)</h1>
+                <h2>Your Songs:</h2>
+                {list_html}
+                <p><a href="/logout">Logout</a></p>
+            </body>
+            </html>
+            """
+
+        self.send_html_response(html)
+
+    def handle_list_users(self, query):
+        """List users with pagination (super_admin only)."""
+        if not self.check_role(['super_admin']):
+            self.send_html_response("<h1>Access Denied</h1>", 403)
             return
 
-        _, first_name, last_name, email, role = user_row
+        page = int(query.get('page', [1])[0])
+        limit = int(query.get('limit', [5])[0])
+        users = list_users_paginated(page=page, limit=limit)
 
-        # List songs for this user
-        songs = list_songs_for_user(user_id)  # e.g. [(id, album_name, type, stage_name), ...]
+        html = "<h1>User List</h1><table border='1'>"
+        html += "<tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th></tr>"
+        for (uid, fname, lname, email, role) in users:
+            html += f"<tr><td>{uid}</td><td>{fname} {lname}</td><td>{email}</td><td>{role}</td></tr>"
+        html += "</table>"
+        html += f"<p>Page: {page}</p>"
+        html += f"<p><a href='/update_user'>Update User</a></p>"
+        html += f"<p><a href='/delete_user'>Delete User</a></p>"
+        html += f"<p><a href='/dashboard'>Back to Dashboard</a></p>"
+        self.send_html_response(html)
 
-        song_list_html = "<ul>"
-        for album_name, genre, artist_name in songs:
-            song_list_html += f"<li>{album_name} {genre} {artist_name}</li>"
-        song_list_html += "</ul>" if songs else "<li>No songs found.</li></ul>"
+    def handle_list_artists(self, query):
+        """List artists with pagination. super_admin or artist_manager only."""
+        if not self.check_role(['super_admin','artist_manager']):
+            self.send_html_response("<h1>Access Denied</h1>", 403)
+            return
 
-        html = f"""
+        page = int(query.get('page', [1])[0])
+        limit = int(query.get('limit', [5])[0])
+        artists = list_artists_paginated(page=page, limit=limit)
+
+        html = "<h1>Artist List</h1><table border='1'>"
+        html += "<tr><th>ID</th>Name<th></th><th>Gender</th><th>First Release Year</th><th>#Albums</th><th>Actions</th></tr>"
+        for (aid, user_id, name, gender, first_release, no_albums) in artists:
+            html += f"<tr><td>{aid}</td><td>{name}</td><td>{gender}</td><td>{first_release}</td><td>{no_albums}</td>"
+            # Button to see songs for this artist:
+            html += f"<td><a href='/artist_songs?artist_id={aid}'>View Songs</a></td></tr>"
+        html += "</table>"
+        html += f"<p>Page: {page}</p>"
+        html += f"<p><a href='/create_artist'>Create Artist</a></p>"
+        html += f"<p><a href='/update_artist'>Update Artist</a></p>"
+        html += f"<p><a href='/delete_artist'>Delete Artist</a></p>"
+        html += f"<p><a href='/dashboard'>Back to Dashboard</a></p>"
+        self.send_html_response(html)
+
+    def handle_list_songs(self, query):
+        """List songs with pagination. super_admin or artist_manager only."""
+        if not self.check_role(['super_admin','artist_manager']):
+            self.send_html_response("<h1>Access Denied</h1>", 403)
+            
+        page = int(query.get('page', [1])[0])
+        limit = int(query.get('limit', [5])[0])
+        songs = list_songs_paginated(page=page, limit=limit)
+
+        html = "<h1>Song List</h1><table border='1'>"
+        html += "<tr><th>ID</th><th>Artist ID</th><th>Album Name</th><th>Type</th></tr>"
+        for (sid, artist_id, album_name, stype) in songs:
+            html += f"<tr><td>{sid}</td><td>{artist_id}</td><td>{album_name}</td><td>{stype}</td></tr>"
+        html += "</table>"
+        html += f"<p>Page: {page}</p>"
+        html += f"<p><a href='/dashboard'>Back to Dashboard</a></p>"
+        self.send_html_response(html)
+
+    def handle_artist_songs(self, query):
+        """Show a list of songs for a particular artist."""
+        if not self.check_role(['super_admin','artist_manager']):
+            self.send_html_response("<h1>Access Denied</h1>", 403)
+            return
+
+        artist_id = query.get('artist_id', [None])[0]
+        if not artist_id:
+            self.send_html_response("<h1>Missing artist_id</h1>", 400)
+            return
+
+        songs = list_songs_for_artist(artist_id)
+        html = f"<h1>Artist {artist_id} Songs</h1><ul>"
+        if songs:
+            for (mid, album_name, stype) in songs:
+                html += f"<li>{album_name} ({stype})</li>"
+        else:
+            html += "<li>No songs found.</li>"
+        html += "</ul>"
+        html += "<p><a href='/artists'>Back to Artists</a></p>"
+        self.send_html_response(html)
+
+    def handle_artist_export(self):
+        """Export all artists to CSV (super_admin or artist_manager)."""
+        if not self.check_role(['super_admin','artist_manager']):
+            self.send_html_response("<h1>Access Denied</h1>", 403)
+            return
+        
+        csv_data = export_artists_csv()
+        # Send as a CSV file download
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/csv; charset=utf-8')
+        self.send_header('Content-Disposition', 'attachment; filename="artists.csv"')
+        self.end_headers()
+        self.wfile.write(csv_data.encode('utf-8'))
+
+    def handle_artist_import_form(self):
+        """Show a form to upload CSV for import."""
+        if not self.check_role(['super_admin','artist_manager']):
+            self.send_html_response("<h1>Access Denied</h1>", 403)
+            return
+        html = """
         <html>
-        <head><title>Dashboard</title></head>
+        <head><title>Import Artists (CSV)</title></head>
         <body>
-            <h1>Dashboard</h1>
-            <p>User: {first_name} {last_name} | Email: {email} | Role: {role}</p>
-            <h2>Your Songs:</h2>
-            {song_list_html}
-            <p><a href="/">Home</a> | <a href="/logout">Logout</a></p>
+            <h1>Import Artists (CSV)</h1>
+            <form method="POST" action="/artist_import" enctype="application/x-www-form-urlencoded">
+                <p>Paste CSV content here:</p>
+                <textarea name="csv_content" rows="10" cols="50"></textarea><br>
+                <input type="submit" value="Import">
+            </form>
+            <p><a href="/dashboard">Back to Dashboard</a></p>
         </body>
         </html>
         """
@@ -225,6 +612,7 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
     # ------------------------
 
     def handle_register_submit(self, form_data):
+        print("inside handle_register_user_submit")
         first_name = form_data.get('first_name', [''])[0]
         last_name = form_data.get('last_name', [''])[0]
         email = form_data.get('email', [''])[0]
@@ -234,21 +622,175 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
 
         # Create user
         try:
+            print("inside try block of handle register submit")
             user_id = create_user(first_name, last_name, email, password, gender, role)
             # After registration, let's redirect them to home or login
+            self.redirect('/login')
+
+        except Exception as e:
+            # Possibly an IntegrityError if email is already taken
+            html = f"<h1>Error creating user: {e}</h1><p><a href='/register'>Try again</a></p>"
+            self.send_html_response(html, 400)
+
+    def handle_artist_import(self, form_data):
+        """Handle CSV import for artists."""
+        if not self.check_role(['super_admin','artist_manager']):
+            self.send_html_response("<h1>Access Denied</h1>", 403)
+            return
+        csv_content = form_data.get('csv_content', [''])[0]
+        try:
+            import_artists_csv(csv_content)
+            self.send_html_response("<h1>Import Successful</h1><p><a href='/dashboard'>Back</a></p>")
+        except Exception as e:
+            html = f"<h1>Error importing CSV: {e}</h1><p><a href='/artist_import_form'>Try again</a></p>"
+            self.send_html_response(html, 400)
+
+    def handle_update_user_submit(self, form_data):
+        # Parse the form values (each value is a list; we take the first element)
+        user_id = form_data.get('id', [''])[0]
+        first_name = form_data.get('first_name', [''])[0]
+        last_name  = form_data.get('last_name', [''])[0]
+        email      = form_data.get('email', [''])[0]
+        password   = form_data.get('password', [''])[0]
+        gender     = form_data.get('gender', [''])[0]
+        role       = form_data.get('role', [''])[0]
+
+        # Build a dictionary of the fields to update.
+        # Only include fields that are not empty (if you want to update selectively)
+        fields_to_update = {}
+        if user_id is not None:
+            if first_name:
+                fields_to_update['first_name'] = first_name
+            if last_name:
+                fields_to_update['last_name'] = last_name
+            if email:
+                fields_to_update['email'] = email
+            if password:
+                # Hash the new password before storing it
+                fields_to_update['password'] = hash_password(password)
+            if gender:
+                fields_to_update['gender'] = gender
+            if role:
+                fields_to_update['role'] = role
+        else:
+            self.send_html_response("<h1>Error: User ID field is required and is of int type.</h1>", 401)
+            return
+        # Get the current user's id (assumes you have a function like get_current_user_id)
+        user_id = get_user_by_id(user_id)  # Adjust according to your session handling
+        if user_id is None:
+            self.send_html_response("<h1>Error: User does not exist </h1>", 401)
+            return
+        print(user_id[0],type(user_id))
+        # Now call update_user with all the fields
+        update_user(user_id[0], **fields_to_update)
+
+        # Optionally, redirect to the dashboard or another page after updating
+        self.send_response(302)
+        self.send_header('Location', '/dashboard')
+        self.end_headers()
+
+    def handle_delete_user_submit(self, form_data):
+        print("inside handle_delete_user_submit")
+        # Parse the form values (we take the first value)
+        user_id = form_data.get("user_id",[''])[0]
+        print("user_id")
+        if user_id:
+            user_obj = get_user_by_id(user_id)
+            print("inside user_id check")
+            if user_obj:
+                delete_user(user_id)
+                self.send_response(302)
+                self.send_header('Location', '/dashboard')
+                self.end_headers()
+            else:
+                self.send_html_response(f"<h1>Error: User with user_id {user_id} doesnot exist.", 401)
+
+        if user_id is None:
+            self.send_html_response("<h1>Error: User ID is required and is positive integer type.", 401)
+
+    def handle_artist_register_submit(self, form_data):
+        name = form_data.get('name', [''])[0]
+        dob = form_data.get('dob', [''])[0]
+        gender = form_data.get('gender', [''])[0]
+        address = form_data.get('address', [''])[0]
+        first_release_year = form_data.get('first_release_year', [''])[0]
+        no_of_albums_released = form_data.get('no_of_albums_released', [''])[0]
+
+        # Create user
+        try:
+            user_id = create_artist(name, dob, gender, address, first_release_year, no_of_albums_released)
+            # After registration, let's redirect them to home or login
             self.send_response(302)
-            self.send_header('Location', '/login')
+            self.send_header('Location', '/dashboard')
             self.end_headers()
         except Exception as e:
             # Possibly an IntegrityError if email is already taken
             html = f"<h1>Error creating user: {e}</h1><p><a href='/register'>Try again</a></p>"
             self.send_html_response(html, 400)
 
+    def handle_artist_update_submit(self, form_data):
+        # Parse the form values (each value is a list; we take the first element)
+        name = form_data.get('name', [''])[0]
+        dob      = form_data.get('dob', [''])[0]
+        address  = form_data.get('address', [''])[0]
+        gender   = form_data.get('gender', [''])[0]
+        first_release_year       = form_data.get('first_release_year', [''])[0]
+        no_of_albums_released       = form_data.get('no_of_albums_released', [''])[0]
+
+        # Build a dictionary of the fields to update.
+        # Only include fields that are not empty (if you want to update selectively)
+        fields_to_update = {}
+        if user_id is not None:
+            if name:
+            fields_to_update['name'] = name
+            if dob:
+                fields_to_update['dob'] = dob
+            if address:
+                fields_to_update['address'] = address
+            if gender:
+                fields_to_update['gender'] = gender
+            if first_release_year:
+                fields_to_update['first_release_year'] = first_release_year
+            if no_of_albums_released:
+                fields_to_update['no_of_albums_released'] = no_of_albums_released
+        else:
+            self.send_html_response("<h1>Error: User ID field is required and is of int type.</h1>", 401)
+            return
+        
+
+        # Get the current user's id (assumes you have a function like get_current_user_id)
+        artist_id = self.get_current_user_id()  # Adjust according to your session handling
+        if artist_id is None:
+            self.send_html_response("<h1>Error: User not logged in.</h1>", 401)
+
+        # Now call update_user with all the fields
+        update_artist(**fields_to_update)
+
+        # Optionally, redirect to the dashboard or another page after updating
+        self.send_response(302)
+        self.send_header('Location', '/dashboard')
+        self.end_headers()
+
+    def handle_delete_artist_submit(self, form_data):
+        print("inside handle_delete_user_submit")
+        # Parse the form values (we take the first value)
+        artist_id = form_data.get("artist_id",[''])[0]
+        print("artist_id")
+        if artist_id:
+            print("inside artist_id check")
+            delete_artist(artist_id)
+            self.send_response(302)
+            self.send_header('Location', '/dashboard')
+            self.end_headers()
+
     def handle_login_submit(self, form_data):
+        print("Inside handle login submit")
         email = form_data.get('email', [''])[0]
         password = form_data.get('password', [''])[0]
         user_info = login(email, password)
+        print("email",email,"password",password,"user_info",user_info)
         if user_info:
+            print("inside user info check")
             # Create session
             session_id = generate_session_id()
             SESSIONS[session_id] = user_info["id"]
@@ -258,15 +800,22 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
             self.send_header('Set-Cookie', f'session_id={session_id}; HttpOnly')
             self.end_headers()
         else:
+            print("no user info(inside else of login)")
             html = "<h1>Invalid credentials</h1><p><a href='/login'>Try again</a></p>"
             self.send_html_response(html, 401)
 
 # ---------------------------------------------
 # Run the server
 # ---------------------------------------------
+import socketserver
+
+class MyTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
+
 def run_server(port=8001):
     create_tables()  # Ensure DB tables are created
-    with socketserver.TCPServer(("0.0.0.0", port), MyHandler) as httpd:
+    with MyTCPServer(("0.0.0.0", port), MyHandler) as httpd:
+        print(f"serving on port {port}")
         httpd.serve_forever()
 
 if __name__ == "__main__":
