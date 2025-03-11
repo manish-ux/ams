@@ -1,8 +1,7 @@
 import sqlite3
-
-# user_crud.py
 from security import hash_password, verify_password
 from datetime import datetime
+
 
 def create_user(first_name, last_name, email, plain_password, gender, role):
     connection_obj = sqlite3.connect("ams.db")
@@ -11,7 +10,6 @@ def create_user(first_name, last_name, email, plain_password, gender, role):
     current_datetime = datetime.now()
     now = current_datetime.isoformat()
 
-    # print("current datetime",now)
     cursor_obj.execute("""
     INSERT INTO user (first_name, last_name, email, password, gender, role, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -38,11 +36,9 @@ def update_user(user_id, **kwargs):
         connection_obj.close()
         return
     set_clauses.append("updated_at = ?")
-    now = datetime.now()
-    values.append(now)
+    values.append(datetime.now())
     set_str = ", ".join(set_clauses)
     sql = f"UPDATE user SET {set_str} WHERE id = ?"
-    print(sql,user_id,type(user_id))
     values.append(user_id)
     try:
         cursor_obj.execute(sql, (values))
@@ -100,12 +96,3 @@ def get_user_by_id(user_id):
     row = cursor_obj.fetchone()
     connection_obj.close()
     return row
-
-# def get_user_object_with_id(self,id):
-#         connection_object = sqlite3.connect("ams.db")
-#         cursor_obj = connection_object.cursor()
-#         sql = """SELECT * from user where id = ?"""
-#         cursor_obj.execute(sql,id)
-#         row = cursor_obj.fetchone()
-#         connection_object.close()
-#         return row

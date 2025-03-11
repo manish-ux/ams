@@ -1,29 +1,26 @@
 import sqlite3
 import csv
 import io
-# user_crud.py
 from security import verify_password
 from datetime import datetime
 
-def create_artist(name, dob, address,gender,first_release_year,no_of_albums_released):
+def create_artist(user_id, name, dob, gender, address, first_release_year,no_of_albums_released):
     connection_obj = sqlite3.connect("ams.db")
     cursor_obj = connection_obj.cursor()
     current_datetime = datetime.now()
     now = current_datetime.isoformat()
-
-    # print("current datetime",now)
+    print(user_id, name, dob, gender, address, first_release_year,no_of_albums_released,now)
     cursor_obj.execute("""
-    INSERT INTO artist (name, dob, gender, address, first_release_year, no_of_albums_released, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (name, dob, gender, address, first_release_year, no_of_albums_released, now, now)
+    INSERT INTO artist (user_id, name, dob, gender, address, first_release_year, no_of_albums_released, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (user_id, name, dob, gender, address, first_release_year, no_of_albums_released, now, now)
     )
     connection_obj.commit()
     user_id = cursor_obj.lastrowid
-    print(user_id,"user_id")
     connection_obj.close()
     return user_id
 
-def update_artist(**kwargs):
+def update_artist(artist_id,**kwargs):
     """
     Update fields in the artist record. For example:
       update_artist(3, name="NewName")
@@ -39,16 +36,9 @@ def update_artist(**kwargs):
         connection_obj.close()
         return
     set_clauses.append("updated_at = ?")
-    now = datetime.now()
-    values.append(now)
+    values.append(datetime.now())
     set_str = ", ".join(set_clauses)
-    sql_initial = "SELECT artist.id FROM artist JOIN user ON artist.name = (user.first_name || ' ' || user.last_name) WHERE user.role = 'Artist'"
-    cursor_obj.execute(sql_initial)
-    connection_obj.commit()
-    artist_id = cursor_obj.fetchone()
-    print("artist_id",artist_id)
     sql = f"UPDATE artist SET {set_str} WHERE id = ?"
-    print(sql)
     values.append(artist_id)
     try:
         cursor_obj.execute(sql, tuple(values))
@@ -96,7 +86,7 @@ def list_artists_paginated(page=1, limit=10):
 def list_songs_for_artist(artist_id):
     """
     Return all songs for a particular artist.
-    We'll join with the music table in music_crud (or do it here).
+    We'll join with the song table in music_crud (or do it here).
     """
     connection_obj = sqlite3.connect("ams.db")
     cursor_obj = connection_obj.cursor()

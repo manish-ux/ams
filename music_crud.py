@@ -24,24 +24,24 @@ import sqlite3
 # music_crud.py
 from datetime import datetime
 
-def create_music(artist_id, album_name, music_type):
+def create_song(artist_id, title, album_name, genre):
     connection_obj = sqlite3.connect("ams.db")
     cursor_obj = connection_obj.cursor()
     now = datetime.now()
     cursor_obj.execute("""
-        INSERT INTO song (artist_id, album_name, genre, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-    """, (artist_id, album_name, music_type, now, now))
+        INSERT INTO song (artist_id, title, album_name, genre, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?,?)
+    """, (artist_id, title, album_name, genre, now, now))
     connection_obj.commit()
     music_id = cursor_obj.lastrowid
     connection_obj.close()
     return music_id
 
-def get_music_by_id(music_id):
+def get_song_by_id(music_id):
     connection_obj = sqlite3.connect("ams.db")
     cursor_obj = connection_obj.cursor()
     cursor_obj.execute("""
-        SELECT id, artist_id, album_name, genre
+        SELECT id, artist_id, title, album_name, genre
         FROM song
         WHERE id = ?
     """, (music_id,))
@@ -49,7 +49,7 @@ def get_music_by_id(music_id):
     connection_obj.close()
     return row
 
-def update_music(music_id, **kwargs):
+def update_song(music_id, **kwargs):
     connection_obj = sqlite3.connect("ams.db")
     cursor_obj = connection_obj.cursor()
     set_clauses = []
@@ -70,7 +70,7 @@ def update_music(music_id, **kwargs):
     connection_obj.commit()
     connection_obj.close()
 
-def delete_music(music_id):
+def delete_song(music_id):
     connection_obj = sqlite3.connect("ams.db")
     cursor_obj = connection_obj.cursor()
     cursor_obj.execute("DELETE FROM song WHERE id = ?", (music_id,))
