@@ -3,7 +3,7 @@ from security import hash_password, verify_password
 from datetime import datetime
 
 
-def create_user(first_name, last_name, email, plain_password, gender, role):
+def create_user(first_name, last_name, email, plain_password, phone, dob, gender, address,role):
     connection_obj = sqlite3.connect("ams.db")
     cursor_obj = connection_obj.cursor()
     hashed_pw = hash_password(plain_password)
@@ -11,9 +11,9 @@ def create_user(first_name, last_name, email, plain_password, gender, role):
     now = current_datetime.isoformat()
 
     cursor_obj.execute("""
-    INSERT INTO user (first_name, last_name, email, password, gender, role, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (first_name, last_name, email, hashed_pw, gender, role, now, now)
+    INSERT INTO user (first_name, last_name, email, password, phone, dob, gender, address, role, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (first_name, last_name, email, hashed_pw, phone, dob, gender, address, role, now, now)
     )
     connection_obj.commit()
     user_id = cursor_obj.lastrowid

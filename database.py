@@ -15,6 +15,8 @@ def create_tables():
         last_name TEXT NOT NULL,
         email TEXT NOT NULL UNIQUE,
         password BLOB  NOT NULL,
+        phone INTEGER,
+        dob TEXT,
         gender TEXT NOT NULL,
         address TEXT,
         role TEXT CHECK(role IN ('super_admin','artist_manager','artist')) NOT NULL,
@@ -33,7 +35,7 @@ def create_tables():
         gender TEXT NOT NULL,
         address TEXT,
         first_release_year INTEGER NOT NULL,
-        no_of_albums_released INTEGER,
+        no_of_albums_released INTEGER NOT NULL,
         created_at TEXT,
         updated_at TEXT,
         FOREIGN KEY(user_id) REFERENCES user(id)            
@@ -46,8 +48,8 @@ def create_tables():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         artist_id INTEGER NOT NULL,
         title TEXT NOT NULL,
-        album_name TEXT,
-        genre TEXT,
+        album_name TEXT NOT NULL,
+        genre TEXT NOT NULL,
         created_at TEXT,
         updated_at TEXT,
         FOREIGN KEY(artist_id) REFERENCES artist(id)                         

@@ -9,7 +9,6 @@ def create_artist(user_id, name, dob, gender, address, first_release_year,no_of_
     cursor_obj = connection_obj.cursor()
     current_datetime = datetime.now()
     now = current_datetime.isoformat()
-    print(user_id, name, dob, gender, address, first_release_year,no_of_albums_released,now)
     cursor_obj.execute("""
     INSERT INTO artist (user_id, name, dob, gender, address, first_release_year, no_of_albums_released, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -163,13 +162,18 @@ def import_artists_csv(csv_content):
         # If you want to let 'id' autoincrement, skip row['id']
         user_id = row['user_id']
         name = row['name']
+        dob = row['dob']
         gender = row['gender']
+        address = row['address']
         first_release_year = row['first_release_year']
-        no_of_albums = row['no_of_albums_released']
-        cursor.execute("""
-            INSERT INTO artist (user_id, name, gender, first_release_year, no_of_albums_released, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, name, gender, first_release_year, no_of_albums, now, now))
-    
-    conn.commit()
+        no_of_albums = int(row['no_of_albums_released'])
+        try:
+            cursor.execute("""
+                INSERT INTO artist (user_id, name, dob, gender, address, first_release_year, no_of_albums_released, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?,?,?)
+            """, (user_id, name, dob, gender, address, first_release_year, no_of_albums, now, now))
+            conn.commit()
+        except Exception as e:
+            print(e)
+        
     conn.close()

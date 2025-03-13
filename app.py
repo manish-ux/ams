@@ -31,9 +31,9 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         # Parse the path
-        parsed_path = urllib.parse.urlparse(self.path)
+        parsed_path = urllib.parse.urlparse(self.path)   #Parses the self.path (the requested URL).
         path = parsed_path.path
-        query = urllib.parse.parse_qs(parsed_path.query)
+        query = urllib.parse.parse_qs(parsed_path.query)  #Converts the query string into a Python dictionary.
 
         if path == '/':
             self.handle_home_page()
@@ -103,7 +103,7 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
             self.handle_artist_update_submit(form_data)
         elif path == '/delete_artist':
             self.handle_delete_artist_submit(form_data)
-        elif path == '/artist_import':
+        elif path == '/artist_import_form':
             self.handle_artist_import(form_data)
         elif path == '/register_song':
             self.handle_song_register_submit(form_data)
@@ -210,7 +210,17 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
                 <p>Last Name: <input type="text" name="last_name"></p>
                 <p>Email: <input type="email" name="email"></p>
                 <p>Password: <input type="password" name="password"></p>
-                <p>Gender: <input type="text" name="gender"></p>
+                <p>Phone: <input type="phone" name="phone"></p>
+                <p>DOB: <input type="dob" name="dob"></p>
+                <p>Gender: 
+                    <select name="gender">
+                        <option value="" disabled selected>Select a gender</option> 
+                        <option value="m">m</option>
+                        <option value="f">f</option>
+                        <option value="o">o</option>
+                    </select>
+                </p>
+                <p>Address: <input type="address" name="address"></p>
                 <p>Role: 
                     <select name="role">
                         <option value="" disabled selected>Select a role</option> 
@@ -242,7 +252,17 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
                     <p>Last Name: <input type="text" name="last_name"></p>
                     <p>Email: <input type="email" name="email"></p>
                     <p>Password: <input type="password" name="password"></p>
-                    <p>Gender: <input type="text" name="gender"></p>
+                    <p>Phone: <input type="phone" name="phone"></p>
+                    <p>DOB: <input type="dob" name="dob"></p>
+                    <p>Gender: 
+                    <select name="gender">
+                        <option value="" disabled selected>Select a gender</option> 
+                        <option value="m">m</option>
+                        <option value="f">f</option>
+                        <option value="o">o</option>
+                    </select>
+                    </p>
+                    <p>Address: <input type="address" name="address"></p>
                     <p>Role: 
                         <select name="role">
                             <option value="" disabled selected>Select a role</option> 
@@ -289,18 +309,17 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
                 <p>User ID: <input type="integer" name="user_id"></p>
                 <p>Name: <input type="text" name="name"></p>
                 <p>DOB: <input type="text" name="dob"></p>
-                <p>Address: <input type="text" name="address"></p>
-                <p>First_release_year: <input type="text" name="first_release_year"></p>
-                <p>No_of_albums_released: <input type="text" name="no_of_albums_released"></p>
-
                 <p>Gender: 
                     <select name="gender">
-                        <option value="" disabled selected>select a gender</option>
+                        <option value="" disabled selected>Select a gender</option> 
                         <option value="m">m</option>
                         <option value="f">f</option>
                         <option value="o">o</option>
                     </select>
                 </p>
+                <p>Address: <input type="text" name="address"></p>
+                <p>First_release_year: <input type="text" name="first_release_year"></p>
+                <p>No_of_albums_released: <input type="text" name="no_of_albums_released"></p>
                 <input type="submit" value="Register">
             </form>
             <p><a href="/">Back to Home</a></p>
@@ -321,7 +340,14 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
                     <p>Artist ID: <input type="number" name="id"></p>
                     <p>Name: <input type="text" name="name"></p>
                     <p>DOB: <input type="text" name="dob"></p>
-                    <p>Gender: <input type="text" name="gender"></p>
+                    <p>Gender: 
+                    <select name="gender">
+                        <option value="" disabled selected>Select a gender</option> 
+                        <option value="m">m</option>
+                        <option value="f">f</option>
+                        <option value="o">o</option>
+                    </select>
+                    </p>
                     <p>Address: <input type="text" name="address"></p>
                     <p>First_release_year: <input type="text" name="first_release_year"></p>
                     <p>No_of_albums_released: <input type="number" name="no_of_albums_released"></p>
@@ -478,7 +504,6 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
         else:
             # role == 'artist'
             # Just show songs for this user
-            print("inside artist")
 
             songs = list_songs_for_user(user_id)
             list_html = "<ul>"
@@ -615,7 +640,7 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
         <head><title>Import Artists (CSV)</title></head>
         <body>
             <h1>Import Artists (CSV)</h1>
-            <form method="POST" action="/artist_import" enctype="application/x-www-form-urlencoded">
+            <form method="POST" action="/artist_import_form" enctype="application/x-www-form-urlencoded">
                 <p>Paste CSV content here:</p>
                 <textarea name="csv_content" rows="10" cols="50"></textarea><br>
                 <input type="submit" value="Import">
@@ -657,12 +682,15 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
         last_name = form_data.get('last_name', [''])[0]
         email = form_data.get('email', [''])[0]
         password = form_data.get('password', [''])[0]
+        phone = form_data.get('email', [''])[0]
+        dob = form_data.get('dob', [''])[0]
         gender = form_data.get('gender', [''])[0]
+        address = form_data.get('address', [''])[0]
         role = form_data.get('role', [''])[0]
 
         # Create user
         try:
-            user_id = create_user(first_name, last_name, email, password, gender, role)
+            user_id = create_user(first_name, last_name, email, password, phone, dob, gender, address, role)
             # After registration, let's redirect them to home or login
             self.redirect('/login')
 
@@ -673,9 +701,9 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
 
     def handle_artist_import(self, form_data):
         """Handle CSV import for artists."""
-        if not self.check_role(['super_admin','artist_manager']):
-            self.send_html_response("<h1>Access Denied</h1>", 403)
-            return
+        # if not self.check_role(['super_admin','artist_manager']):
+        #     self.send_html_response("<h1>Access Denied</h1>", 403)
+        #     return
         csv_content = form_data.get('csv_content', [''])[0]
         try:
             import_artists_csv(csv_content)
@@ -691,7 +719,10 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
         last_name  = form_data.get('last_name', [''])[0]
         email      = form_data.get('email', [''])[0]
         password   = form_data.get('password', [''])[0]
+        phone = form_data.get('phone', [''])[0]
+        dob = form_data.get('dob', [''])[0]
         gender     = form_data.get('gender', [''])[0]
+        address = form_data.get('address', [''])[0]
         role       = form_data.get('role', [''])[0]
 
         # Build a dictionary of the fields to update.
@@ -707,8 +738,14 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
             if password:
                 # Hash the new password before storing it
                 fields_to_update['password'] = hash_password(password)
+            if phone:
+                fields_to_update['phone'] = phone
+            if dob:
+                fields_to_update['dob'] = dob
             if gender:
                 fields_to_update['gender'] = gender
+            if address:
+                fields_to_update['address'] = address
             if role:
                 fields_to_update['role'] = role
         else:
@@ -770,8 +807,8 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
         artist_id = form_data.get('id', [''])[0]
         name = form_data.get('name', [''])[0]
         dob      = form_data.get('dob', [''])[0]
-        address  = form_data.get('address', [''])[0]
         gender   = form_data.get('gender', [''])[0]
+        address  = form_data.get('address', [''])[0]
         first_release_year       = form_data.get('first_release_year', [''])[0]
         no_of_albums_released       = form_data.get('no_of_albums_released', [''])[0]
 
@@ -912,7 +949,6 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
             self.send_header('Set-Cookie', f'session_id={session_id}; HttpOnly')
             self.end_headers()
         else:
-            print("no user info(inside else of login)")
             html = "<h1>Invalid credentials</h1><p><a href='/login'>Try again</a></p>"
             self.send_html_response(html, 401)
 

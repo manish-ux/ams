@@ -95,7 +95,6 @@ def list_songs_for_user(user_id):
     """
     Return songs for the given user, by joining user->artist->music.
     """
-    print("inside list_songs_for_user")
     connection_obj = sqlite3.connect("ams.db")
     cursor_obj = connection_obj.cursor()
     query = """
